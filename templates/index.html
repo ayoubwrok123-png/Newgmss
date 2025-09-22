@@ -39,7 +39,7 @@ document.getElementById("checkBtn").onclick = async () => {
   if (ids.length > 5) return alert("Max 5 accounts at once");
 
   document.getElementById("results").innerHTML =
-    "<div class='spinner-border text-primary'></div> Loading...";
+    "<div class='spinner-border text-primary'></div> Checking...";
 
   let res = await fetch("/api/check_multi", {
     method: "POST",
@@ -51,12 +51,20 @@ document.getElementById("checkBtn").onclick = async () => {
   let out = "";
   for (let acc in data) {
     out += `<div class="card mb-3 shadow-sm"><div class="card-body">`;
-    out += `<h5 class="card-title">📧 ${acc}</h5>`;
+    out += `<h5 class="card-title text-primary">📧 ${acc}</h5>`;
     let folders = data[acc];
-    for (let f in folders) {
-      out += `<h6>${f}</h6><ul class="list-group mb-2">`;
-      folders[f].forEach(s => out += `<li class="list-group-item">${s}</li>`);
-      out += `</ul>`;
+    if (folders.error) {
+      out += `<div class="alert alert-danger">${folders.error}</div>`;
+    } else {
+      out += `<h6>Inbox</h6>`;
+      out += folders.INBOX.length ? `<ul class="list-group mb-2">` : `<p class="text-muted">No Inbox messages</p>`;
+      folders.INBOX.forEach(s => out += `<li class="list-group-item">${s}</li>`);
+      if (folders.INBOX.length) out += `</ul>`;
+
+      out += `<h6 class="mt-3">Spam</h6>`;
+      out += folders.SPAM.length ? `<ul class="list-group">` : `<p class="text-muted">No Spam messages</p>`;
+      folders.SPAM.forEach(s => out += `<li class="list-group-item">${s}</li>`);
+      if (folders.SPAM.length) out += `</ul>`;
     }
     out += "</div></div>";
   }
