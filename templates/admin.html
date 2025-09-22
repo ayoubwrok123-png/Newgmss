@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Admin</title></head>
+<body>
+{% if not authorized %}
+  <h2>Login</h2>
+  <form method="get">
+    <input name="pw" type="password" placeholder="Admin password">
+    <button type="submit">Enter</button>
+  </form>
+{% else %}
+  <h1>Admin</h1>
+  <form method="post">
+    <input type="hidden" name="pw" value="{{ pw }}">
+    <input name="email" placeholder="Email" required>
+    <input name="app_password" placeholder="App password" required>
+    <input name="label" placeholder="Label">
+    <button type="submit">Add</button>
+  </form>
+  <ul>
+  {% for id, email, label in accounts %}
+    <li><b>{{ email }}</b> ({{ label or '' }})
+      <form method="post" action="{{ url_for('do_delete', acc_id=id) }}" style="display:inline">
+        <input type="hidden" name="pw" value="{{ pw }}">
+        <button type="submit">Delete</button>
+      </form>
+    </li>
+  {% endfor %}
+  </ul>
+{% endif %}
+</body>
+</html>
