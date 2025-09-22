@@ -8,29 +8,60 @@
 <body class="bg-light">
 
 <div class="container py-4">
-  <h1 class="text-primary">📂 MyMailerApp - Accounts</h1>
-  <a href="/admin" class="btn btn-success mb-3">➕ Manage Accounts</a>
+  <h1 class="text-primary mb-3">📂 MyMailerApp - Accounts</h1>
 
-  {% if accounts %}
-    <table class="table table-bordered table-striped bg-white shadow-sm">
+  <form id="multiForm">
+    <table class="table table-hover bg-white shadow-sm">
       <thead class="table-dark">
-        <tr><th>Email</th><th>Label</th><th>Actions</th></tr>
+        <tr><th>Select</th><th>Email</th><th>Label</th></tr>
       </thead>
       <tbody>
       {% for id, email, label in accounts %}
         <tr>
+          <td><input type="checkbox" name="acc" value="{{ id }}"></td>
           <td>{{ email }}</td>
           <td>{{ label or '' }}</td>
-          <td><a href="{{ url_for('check', acc_id=id) }}" class="btn btn-primary btn-sm">Check Mail</a></td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
-  {% else %}
-    <div class="alert alert-warning">No accounts yet.</div>
-  {% endif %}
+    <button type="button" id="checkBtn" class="btn btn-primary">Check Selected (max 5)</button>
+  </form>
+
+  <div id="results" class="mt-4"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.getElementById("checkBtn").onclick = async () => {
+  let ids = [...document.querySelectorAll('input[name=acc]:checked')].map(cb => cb.value);
+  if (ids.length === 0) return alert("Select at least one account");
+  if (ids.length > 5) return alert("Max 5 accounts at once");
+
+  document.getElementById("results").innerHTML =
+    "<div class='spinner-border text-primary'></div> Loading...";
+
+  let res = await fetch("/api/check_multi", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ids: ids})
+  });
+  let data = await res.json();
+
+  let out = "";
+  for (let acc in data) {
+    out += `<div class="card mb-3 shadow-sm"><div class="card-body">`;
+    out += `<h5 class="card-title">📧 ${acc}</h5>`;
+    let folders = data[acc];
+    for (let f in folders) {
+      out += `<h6>${f}</h6><ul class="list-group mb-2">`;
+      folders[f].forEach(s => out += `<li class="list-group-item">${s}</li>`);
+      out += `</ul>`;
+    }
+    out += "</div></div>";
+  }
+  document.getElementById("results").innerHTML = out;
+};
+</script>
 </body>
 </html>
