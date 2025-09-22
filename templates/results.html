@@ -14,14 +14,16 @@
   {% if results.error %}
     <div class="alert alert-danger">Error: {{ results.error }}</div>
   {% else %}
-    <div class="row">
+    <div class="accordion" id="folders">
       {% for folder, subs in results.items() %}
-        <div class="col-md-6 mb-3">
-          <div class="card shadow-sm">
-            <div class="card-header bg-dark text-white">
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#f{{loop.index}}">
               {{ folder }}
-            </div>
-            <div class="card-body">
+            </button>
+          </h2>
+          <div id="f{{loop.index}}" class="accordion-collapse collapse" data-bs-parent="#folders">
+            <div class="accordion-body">
               {% if subs %}
                 <ul class="list-group">
                   {% for s in subs %}
