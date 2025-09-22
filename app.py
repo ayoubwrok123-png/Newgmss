@@ -1,8 +1,8 @@
 import os, sys, sqlite3, shutil
 import imaplib, email
 from email.header import decode_header
-from datetime import datetime, timedelta
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, abort, jsonify
+from datetime import datetime
+from flask import Flask, render_template, request, jsonify
 from concurrent.futures import ThreadPoolExecutor
 
 APP_NAME = "MyMailerApp"
@@ -69,12 +69,10 @@ def clean_subject(raw_subj):
     return "".join(result).strip()
 
 def fetch_last_subjects(email_user, email_pass, limit=20):
-    results = {"INBOX": [], "SPAM": [], "PROMOTIONS": [], "UPDATES": []}
+    results = {"INBOX": [], "SPAM": []}
     folders = {
         "INBOX": "INBOX",
-        "SPAM": "[Gmail]/Spam",
-        "PROMOTIONS": "[Gmail]/Promotions",
-        "UPDATES": "[Gmail]/Updates"
+        "SPAM": "[Gmail]/Spam"
     }
     try:
         with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
@@ -98,26 +96,16 @@ def fetch_last_subjects(email_user, email_pass, limit=20):
         return {"error": str(e)}
     return results
 
-# ---------- Flask App ----------
+# ---------- Flask ----------
 def create_app():
     tpl = resource_path("templates")
     app = Flask(__name__, template_folder=tpl)
     app.secret_key = os.environ.get("FLASK_SECRET", "chg_me_now")
     ensure_db()
 
-    # Routes
     @app.route("/")
     def index():
         return render_template("index.html", accounts=get_accounts())
-
-    @app.route("/check/<int:acc_id>")
-    def check(acc_id):
-        row = get_account_by_id(acc_id)
-        if not row:
-            return "Account not found", 404
-        _, email_addr, app_pass, _ = row
-        results = fetch_last_subjects(email_addr, app_pass)
-        return render_template("results.html", email=email_addr, results=results)
 
     # Multi-check API
     @app.route("/api/check_multi", methods=["POST"])
