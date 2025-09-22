@@ -70,10 +70,7 @@ def clean_subject(raw_subj):
 
 def fetch_last_subjects(email_user, email_pass, limit=20):
     results = {"INBOX": [], "SPAM": []}
-    folders = {
-        "INBOX": "INBOX",
-        "SPAM": "[Gmail]/Spam"
-    }
+    folders = {"INBOX": "INBOX", "SPAM": "[Gmail]/Spam"}
     try:
         with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
             imap.login(email_user, email_pass)
@@ -116,15 +113,16 @@ def create_app():
         def worker(acc_id):
             row = get_account_by_id(acc_id)
             if not row:
-                return {"error": "Account not found"}
+                return None, {"error": "Account not found"}
             _, email_addr, app_pass, _ = row
-            return fetch_last_subjects(email_addr, app_pass)
+            return email_addr, fetch_last_subjects(email_addr, app_pass)
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             future_map = {executor.submit(worker, acc_id): acc_id for acc_id in ids}
             for f in future_map:
-                acc_id = future_map[f]
-                results[acc_id] = f.result()
+                email_addr, data = f.result()
+                if email_addr:
+                    results[email_addr] = data
 
         return jsonify(results)
 
