@@ -1,0 +1,32 @@
+name: Build EXE with PyInstaller
+
+on:
+  workflow_dispatch:   # run manually from Actions tab
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build desktop exe
+        run: pyinstaller --onefile --windowed --add-data "templates;templates" --add-data "accounts.db;." desktop.py
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyMailerApp-exe
+          path: dist/*.exe
