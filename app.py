@@ -1,58 +1,15 @@
-import os, sys, sqlite3, shutil
-import imaplib, email
+import imaplib
+import email
 from email.header import decode_header
-from datetime import datetime
-from flask import Flask, render_template, request, jsonify
-from concurrent.futures import ThreadPoolExecutor
+from flask import Flask, render_template, request, session, redirect, url_for
 
-APP_NAME = "MyMailerApp"
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
+app = Flask(__name__)
+app.secret_key = "super_secret_key"
+
 IMAP_HOST = "imap.gmail.com"
 IMAP_PORT = 993
 
-# ---------- Helpers ----------
-def resource_path(*parts):
-    if getattr(sys, "frozen", False):
-        base = sys._MEIPASS
-    else:
-        base = os.path.abspath(os.path.dirname(__file__))
-    return os.path.join(base, *parts)
 
-def app_data_dir():
-    if os.name == "nt":
-        base = os.environ.get("APPDATA") or os.path.expanduser("~")
-        d = os.path.join(base, APP_NAME)
-    else:
-        d = os.path.join(os.path.expanduser("~"), f".{APP_NAME.lower()}")
-    os.makedirs(d, exist_ok=True)
-    return d
-
-DB_FILE = os.path.join(app_data_dir(), "accounts.db")
-
-def ensure_db():
-    if not os.path.exists(DB_FILE):
-        bundled = resource_path("accounts.db")
-        if os.path.exists(bundled):
-            shutil.copy(bundled, DB_FILE)
-
-# ---------- DB ----------
-def get_accounts():
-    con = sqlite3.connect(DB_FILE)
-    cur = con.cursor()
-    cur.execute("SELECT id, email, label FROM accounts ORDER BY id DESC")
-    rows = cur.fetchall()
-    con.close()
-    return rows
-
-def get_account_by_id(acc_id):
-    con = sqlite3.connect(DB_FILE)
-    cur = con.cursor()
-    cur.execute("SELECT id, email, app_password, label FROM accounts WHERE id=?", (acc_id,))
-    row = cur.fetchone()
-    con.close()
-    return row
-
-# ---------- Mail ----------
 def clean_subject(raw_subj):
     if not raw_subj:
         return ""
@@ -68,65 +25,81 @@ def clean_subject(raw_subj):
             result.append(str(subj))
     return "".join(result).strip()
 
-def fetch_last_subjects(email_user, email_pass, limit=20):
-    results = {"INBOX": [], "SPAM": []}
-    folders = {"INBOX": "INBOX", "SPAM": "[Gmail]/Spam"}
+
+def fetch_emails(user, password, folder="INBOX", limit=20):
+    results = []
     try:
         with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
-            imap.login(email_user, email_pass)
-            today = datetime.now().strftime("%d-%b-%Y")
-            for name, path in folders.items():
-                try:
-                    imap.select(path, readonly=True)
-                    status, data = imap.search(None, f'(SINCE {today})')
-                    if status == "OK" and data[0]:
-                        ids = data[0].split()[-limit:]
-                        for msg_id in reversed(ids):
-                            res, msg_data = imap.fetch(msg_id, "(BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
-                            if res == "OK" and msg_data and msg_data[0]:
-                                msg = email.message_from_bytes(msg_data[0][1])
-                                results[name].append(clean_subject(msg.get("Subject")))
-                except Exception:
-                    results[name].append("<error>")
+            imap.login(user, password)
+            imap.select(folder)
+            status, data = imap.search(None, "ALL")
+            if status != "OK":
+                return []
+
+            ids = data[0].split()[-limit:]
+            for msg_id in reversed(ids):
+                res, msg_data = imap.fetch(msg_id, "(RFC822)")
+                if res != "OK":
+                    continue
+                msg = email.message_from_bytes(msg_data[0][1])
+
+                received = msg.get("Received")
+                if received:
+                    date = received.split(";")[-1].strip()
+                else:
+                    date = msg.get("Date", "")
+
+                subj = clean_subject(msg.get("Subject"))
+                sender = msg.get("From")
+
+                body = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        ctype = part.get_content_type()
+                        if ctype == "text/html":
+                            body = part.get_payload(decode=True).decode(errors="ignore")
+                            break
+                        elif ctype == "text/plain":
+                            body = part.get_payload(decode=True).decode(errors="ignore")
+                else:
+                    body = msg.get_payload(decode=True).decode(errors="ignore")
+
+                results.append({
+                    "subject": subj,
+                    "from": sender,
+                    "date": date,
+                    "body": body
+                })
             imap.logout()
     except Exception as e:
-        return {"error": str(e)}
+        print("Error:", e)
     return results
 
-# ---------- Flask ----------
-def create_app():
-    tpl = resource_path("templates")
-    app = Flask(__name__, template_folder=tpl)
-    app.secret_key = os.environ.get("FLASK_SECRET", "chg_me_now")
-    ensure_db()
 
-    @app.route("/")
-    def index():
-        return render_template("index.html", accounts=get_accounts())
+@app.route("/", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        session["email"] = request.form["email"]
+        session["password"] = request.form["password"]
+        return redirect(url_for("mailbox"))
+    return render_template("login.html")
 
-    # Multi-check API
-    @app.route("/api/check_multi", methods=["POST"])
-    def check_multi():
-        ids = request.json.get("ids", [])[:5]
-        results = {}
 
-        def worker(acc_id):
-            row = get_account_by_id(acc_id)
-            if not row:
-                return None, {"error": "Account not found"}
-            _, email_addr, app_pass, _ = row
-            return email_addr, fetch_last_subjects(email_addr, app_pass)
+@app.route("/mailbox")
+def mailbox():
+    if "email" not in session:
+        return redirect(url_for("login"))
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            future_map = {executor.submit(worker, acc_id): acc_id for acc_id in ids}
-            for f in future_map:
-                email_addr, data = f.result()
-                if email_addr:
-                    results[email_addr] = data
+    user = session["email"]
+    pw = session["password"]
 
-        return jsonify(results)
+    inbox = fetch_emails(user, pw, "INBOX", 20)
+    spam = fetch_emails(user, pw, "[Gmail]/Spam", 20)
 
-    return app
+    return render_template("mailbox.html", email=user, inbox=inbox, spam=spam)
 
-if __name__ == "__main__":
-    create_app().run(host="127.0.0.1", port=5000, debug=True)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
