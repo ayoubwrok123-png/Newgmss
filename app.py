@@ -43,6 +43,7 @@ def fetch_emails(user, password, folder="INBOX", limit=20):
                     continue
                 msg = email.message_from_bytes(msg_data[0][1])
 
+                # Prefer Received date (harder to spoof than Date)
                 received = msg.get("Received")
                 if received:
                     date = received.split(";")[-1].strip()
